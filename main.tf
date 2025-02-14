@@ -93,12 +93,13 @@ resource "aws_cloudfront_distribution" "this" {
     domain_name              = aws_s3_bucket.this.bucket_regional_domain_name
   }
 
+
   enabled             = true
   is_ipv6_enabled     = true
   comment             = var.domain
   default_root_object = "index.html"
 
-  aliases = [var.domain]
+  aliases = [var.domain, "www.${var.domain}"]
 
   default_cache_behavior {
     allowed_methods = ["GET", "HEAD", "OPTIONS"]
