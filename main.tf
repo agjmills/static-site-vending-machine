@@ -10,6 +10,7 @@ resource "aws_acm_certificate" "this" {
   domain_name       = var.domain
   validation_method = "DNS"
 
+  subject_alternative_names = [ "www.${var.domain}" ]
 }
 
 resource "cloudflare_dns_record" "validation" {
