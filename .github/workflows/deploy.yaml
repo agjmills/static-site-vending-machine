@@ -1,0 +1,67 @@
+name: Terraform Workflow with Domain
+
+on:
+  workflow_dispatch:
+    inputs:
+      domain:
+        description: "The domain name to deploy"
+        required: true
+        type: string
+      template:
+        description: "The repo to use as the website template"
+        required: true
+        type: choice
+        options:
+          - "ClickyMcSiteFace/website-template-congo"
+      target_environment:
+        description: "The environment into which the site should be deployed"
+        required: true
+        type: choice
+        options:
+          - "alex"
+          - "matt"
+        default: "alex"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.target_environment }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Deploy Application
+        run: echo "Deploying to the ${{ github.event.inputs.target_environment }} environment."
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.10.0
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-oidc/github-deployment
+
+      - name: Initialize Terraform
+        run: |
+          terraform init \
+            -backend-config="bucket=tf-state-eu-west-2-${{ secrets.AWS_ACCOUNT_ID }}" \
+            -backend-config="region=eu-west-2" \
+            -backend-config="key=ClickyMcSiteFace/${{ github.event.inputs.domain }}.tfstate"
+
+      - name: Terraform Plan
+        run: |
+          terraform plan -out=tfplan \
+            -var "domain=${{ github.event.inputs.domain }}" \
+            -var "template=${{ github.event.inputs.template }}"
+
+      - name: Terraform Apply
+        run: |
+          terraform apply -auto-approve tfplan
