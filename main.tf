@@ -172,39 +172,3 @@ resource "cloudflare_dns_record" "dkim" {
   ttl     = 600
   type    = "CNAME"
 }
-
-resource "aws_iam_role" "email_lambda_role" {
-  name               = "${var.domain}-email-lambda"
-  assume_role_policy = data.aws_iam_policy_document.email_lambda_role_policy.json
-}
-
-data "aws_iam_policy_document" "email_lambda_role_policy" {
-  statement {
-    principals {
-      type = "Service"
-      identifiers = ["lambda.amazonaws.com"]
-    }
-    actions = [ "sts:AssumeRole" ]
-    effect = "Allow"
-  }
-}
-
-resource "aws_iam_policy" "ses_send_email" {
-  name        = "SES_Send_Email_Policy"
-  description = "Policy to allow Lambda to send emails via SES"
-  policy      = data.aws_iam_policy_document.send_ses.json
-}
-
-data "aws_iam_policy_document" "send_ses" {
-  statement {
-    effect = "Allow"
-    actions = [ "ses:SendEmail" ]
-    resources = ["*"]
-  }
-}
-
-resource "aws_iam_role_policy_attachment" "lambda_ses_policy_attachment" {
-  policy_arn = aws_iam_policy.ses_send_email.arn
-  role       = aws_iam_role.email_lambda_role.name
-}
-
