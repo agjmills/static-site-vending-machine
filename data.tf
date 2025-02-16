@@ -1,4 +1,5 @@
 data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
 
 data "aws_secretsmanager_secret" "cloudflare_api_token" {
   name = "cloudflare_api_token"

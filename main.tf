@@ -10,7 +10,7 @@ resource "aws_acm_certificate" "this" {
   domain_name       = var.domain
   validation_method = "DNS"
 
-  subject_alternative_names = [ "www.${var.domain}" ]
+  subject_alternative_names = ["www.${var.domain}"]
 }
 
 resource "cloudflare_dns_record" "validation" {
@@ -47,10 +47,10 @@ data "aws_iam_policy_document" "bucket_policy" {
     sid = "AllowCloudFrontServicePrincipalReadOnly"
 
     principals {
-      type = "Service"
+      type        = "Service"
       identifiers = ["cloudfront.amazonaws.com"]
     }
-    effect = "Allow"
+    effect    = "Allow"
     actions   = ["s3:GetObject"]
     resources = ["${aws_s3_bucket.this.arn}/*"]
 
@@ -79,11 +79,40 @@ resource "aws_cloudfront_origin_access_control" "this" {
 }
 
 resource "aws_cloudfront_function" "this" {
-  name = "AppendIndex-${random_pet.this.id}"
+  name    = "AppendIndex-${random_pet.this.id}"
   runtime = "cloudfront-js-1.0"
   comment = "Appends index.html to folder requests"
-  code = file("${path.module}/resources/implicit-index-html/handler.js")
+  code    = file("${path.module}/resources/implicit-index-html/handler.js")
 }
+
+data "aws_api_gateway_rest_api" "contact" {
+  name = "ContactFormAPI"
+}
+
+resource "aws_apigatewayv2_domain_name" "this" {
+  domain_name = var.domain
+
+  domain_name_configuration {
+    certificate_arn = aws_acm_certificate.this.arn
+    endpoint_type   = "REGIONAL"
+    security_policy = "TLS_1_2"
+  }
+}
+
+resource "aws_apigatewayv2_api_mapping" "this" {
+  api_id      = data.aws_api_gateway_rest_api.contact.id
+  domain_name = aws_apigatewayv2_domain_name.this.id
+  stage       = "prod"
+}
+
+data "aws_cloudfront_cache_policy" "caching_disabled" {
+  name = "Managed-CachingDisabled"
+}
+
+data "aws_cloudfront_origin_request_policy" "user_agent_referer" {
+  name = "Managed-UserAgentRefererHeaders"
+}
+
 
 
 resource "aws_cloudfront_distribution" "this" {
@@ -93,6 +122,23 @@ resource "aws_cloudfront_distribution" "this" {
     domain_name              = aws_s3_bucket.this.bucket_regional_domain_name
   }
 
+  origin {
+    origin_id   = "${data.aws_api_gateway_rest_api.contact.id}.execute-api.${data.aws_region.current.name}.amazonaws.com"
+    origin_path = "/prod"
+    domain_name = "${data.aws_api_gateway_rest_api.contact.id}.execute-api.${data.aws_region.current.name}.amazonaws.com"
+
+    custom_origin_config {
+      origin_protocol_policy = "https-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+      http_port              = 80
+      https_port             = 443
+    }
+
+    custom_header {
+      name = "CfDomain"
+      value = var.domain
+    }
+  }
 
   enabled             = true
   is_ipv6_enabled     = true
@@ -112,9 +158,22 @@ resource "aws_cloudfront_distribution" "this" {
     viewer_protocol_policy = "redirect-to-https"
 
     function_association {
-      event_type = "viewer-request"
+      event_type   = "viewer-request"
       function_arn = aws_cloudfront_function.this.arn
     }
+  }
+
+  ordered_cache_behavior {
+    path_pattern     = "/submit"
+    allowed_methods  = ["HEAD", "DELETE", "POST", "GET", "OPTIONS", "PUT", "PATCH"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "${data.aws_api_gateway_rest_api.contact.id}.execute-api.${data.aws_region.current.name}.amazonaws.com"
+
+    viewer_protocol_policy = "redirect-to-https"
+    compress               = true
+
+    cache_policy_id = data.aws_cloudfront_cache_policy.caching_disabled.id
+    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.user_agent_referer.id
   }
 
   price_class = "PriceClass_100"
@@ -164,7 +223,7 @@ resource "aws_ses_domain_dkim" "this" {
 
 resource "cloudflare_dns_record" "dkim" {
   count = 3
-  
+
   zone_id = data.cloudflare_zone.this.id
   content = "${aws_ses_domain_dkim.this.dkim_tokens[count.index]}.dkim.amazonses.com"
   name    = "${aws_ses_domain_dkim.this.dkim_tokens[count.index]}._domainkey"
